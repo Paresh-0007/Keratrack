@@ -363,17 +363,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Real-time notifications system
 - [ ] Advanced analytics dashboard
 
-## 👥 Team
-
-- **Paresh Gupta** - [@Paresh-0007](https://github.com/Paresh-0007) - Project Lead & Full Stack Developer
-
-## 🙏 Acknowledgments
-
-- ConvNeXt model architecture by Facebook Research
-- Timm library for model implementations
-- FastAPI and Next.js communities for excellent frameworks
-- Hair loss research community for domain knowledge
-
----
-
 **Made with ❤️ for better hair health worldwide**
