@@ -6,6 +6,10 @@ from logging.config import fileConfig
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from alembic import context
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Import models so Alembic can "see" them
 from app.database import Base
@@ -13,6 +17,9 @@ from app import models
 
 # Config
 config = context.config
+
+# Set the database URL from environment
+config.set_main_option("sqlalchemy.url", os.getenv("POSTGRES_URL"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

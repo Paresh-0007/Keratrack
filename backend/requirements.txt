@@ -11,3 +11,6 @@ pillow
 torch
 timm
 email-validator
+numpy
+pandas
+scikit-learn

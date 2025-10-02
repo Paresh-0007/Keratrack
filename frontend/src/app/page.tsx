@@ -76,42 +76,56 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* UPLOAD MODULE */}
-      <section id="upload" className="container mx-auto px-4 py-10 flex flex-col items-center">
-        <h2 className="text-xl font-semibold text-blue-700 mb-4">Upload Image for Instant Analysis</h2>
-        <form
-          onSubmit={handleUpload}
-          className={`border-2 border-dashed rounded-lg p-8 w-full max-w-lg flex flex-col items-center ${dragActive ? "border-blue-600 bg-blue-50" : "border-gray-300"}`}
-          onDragOver={e => {e.preventDefault(); setDragActive(true);}}
-          onDragLeave={e => {e.preventDefault(); setDragActive(false);}}
-          onDrop={e => {
-            e.preventDefault();
-            setDragActive(false);
-            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-              setFile(e.dataTransfer.files[0]);
-            }
-          }}
-        >
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            id="file-upload"
-            onChange={e => setFile(e.target.files?.[0] || null)}
-          />
-          <label htmlFor="file-upload" className="cursor-pointer flex flex-col items-center">
-            <span className="text-5xl text-blue-600 mb-2">🖼️</span>
-            <span className="text-gray-700 mb-2">{file ? file.name : "Drag & drop or click to select a scalp image"}</span>
-            <span className="bg-blue-600 text-white px-4 py-2 mt-2 rounded hover:bg-blue-700 transition">Choose File</span>
-          </label>
-          <button
-            type="submit"
-            className="mt-5 bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition"
-            disabled={!file || loading}
-          >
-            {loading ? "Analyzing..." : "Analyze"}
-          </button>
-        </form>
+      {/* FEATURES SECTION */}
+      <section className="bg-gradient-to-r from-green-50 to-blue-50 py-16">
+        <div className="container mx-auto px-4">
+          <h2 className="text-3xl font-bold text-center text-gray-800 mb-12">
+            Complete Hair Health Solution
+          </h2>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <div className="bg-white rounded-xl shadow-lg p-6 text-center">
+              <div className="text-4xl mb-4">🥗</div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">AI Diet Recommendations</h3>
+              <p className="text-gray-600 mb-4">
+                Get personalized nutrition plans based on your hair loss stage and health profile
+              </p>
+              <Link
+                href="/diet"
+                className="inline-block bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition"
+              >
+                Get Diet Plan
+              </Link>
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-lg p-6 text-center">
+              <div className="text-4xl mb-4">📊</div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">Lifestyle Tracking</h3>
+              <p className="text-gray-600 mb-4">
+                Monitor stress, sleep, and exercise to understand their impact on your hair health
+              </p>
+              <Link
+                href="/diet/lifestyle"
+                className="inline-block bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+              >
+                Start Tracking
+              </Link>
+            </div>
+            
+            <div className="bg-white rounded-xl shadow-lg p-6 text-center">
+              <div className="text-4xl mb-4">📈</div>
+              <h3 className="text-xl font-semibold text-gray-800 mb-2">Progress Analytics</h3>
+              <p className="text-gray-600 mb-4">
+                Track your hair health journey with detailed analytics and correlations
+              </p>
+              <Link
+                href="/history"
+                className="inline-block bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 transition"
+              >
+                View Progress
+              </Link>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* BENEFITS */}
@@ -130,18 +144,6 @@ export default function Landing() {
           </div>
         </div>
       </section>
-
-      {/* FOOTER */}
-      <footer className="bg-white border-t mt-10">
-        <div className="container mx-auto px-4 py-6 flex flex-col md:flex-row justify-between items-center text-gray-500 text-sm">
-          <div>
-            &copy; {new Date().getFullYear()} KeraTrack &mdash; Academic Project, APSIT
-          </div>
-          <div>
-            <Link href="/about" className="underline hover:text-blue-700 ml-4">About Us</Link>
-          </div>
-        </div>
-      </footer>
     </>
   );
 }
