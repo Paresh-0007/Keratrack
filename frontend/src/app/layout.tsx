@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <Link className="hover:text-blue-600 transition" href="/history">History</Link>
               <Link className="hover:text-blue-600 transition" href="/about">About Us</Link>
               <Link className="hover:text-blue-600 transition" href="/diet">Diet Recommendations</Link>
-              <Link className="hover:text-blue-600 transition" href="/about">Track Lifestyle</Link>
+              <Link className="hover:text-blue-600 transition" href="/diet/lifestyle">Track Lifestyle</Link>
               <Link className="hover:text-blue-600 transition" href="/login">Login</Link>
               <Link className="hover:text-blue-600 transition" href="/signup">
                 <span className="border px-3 py-1 rounded text-blue-600 border-blue-600 hover:bg-blue-50 transition">Sign Up</span>

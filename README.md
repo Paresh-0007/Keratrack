@@ -363,4 +363,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Real-time notifications system
 - [ ] Advanced analytics dashboard
 
+
+## 🏋️‍♂️ Model Training Instructions
+```bash
+!python train_ensemble_models.py \
+  --models convnext_base \
+  --n_splits 5 \
+  --epochs 12 \
+  --batch_size 16 \
+  --num_workers 4
+```
+
 **Made with ❤️ for better hair health worldwide**
