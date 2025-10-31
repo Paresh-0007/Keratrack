@@ -82,6 +82,290 @@ Hyperparameters (typical):
 - Produces a 7‑day meal plan from templates filtered by dietary restrictions and suggests supplements for higher severity.
 - Returns a confidence score based on data sufficiency and assessment completeness.
 
+### 4.5 Diet recommendation flow and formulas (detailed)
+
+This section formalizes the deterministic pipeline implemented in `backend/app/diet_ai.py`.
+
+1) Hair stage time‑series → severity and trend
+- Stage to severity mapping: LEVEL_2..LEVEL_7 → s ∈ [0.2, 1.0] (see HAIR_STAGE_SEVERITY).
+- Let the most recent prediction be at time t0 and the oldest at tn. Define progression rate per month:
+
+  $\displaystyle r = \frac{s(t_0) - s(t_n)}{\max(1,\ \text{days}(t_0,t_n))}\times 30.$
+
+- Trend label: worsening if r > 0.05; improving if r < −0.05; else stable.
+
+2) Personalized nutrient targets
+- Start from nutrient‑specific base needs b_n and hair‑loss multipliers m_n (domain‑informed constants in HAIR_NUTRIENTS).
+- Adjust for gender where applicable (e.g., iron 18 mg women, 8 mg men; omega‑3 1.1 g women, 1.6 g men; vitamin C 75 mg women, 90 mg men).
+- Protein scales with weight W (kg): $b_{protein} = 0.8\,\text{g/kg}\times W$.
+- Hair severity multiplier: $h = 1 + s$ where s is current severity.
+- Urgency multiplier for worsening trend: $u = 1.2$ if r > 0 else $u = 1.0$.
+- Final daily target for nutrient n:
+
+  $\displaystyle T_n = b_n \times m_n \times h \times u.$
+
+Units are per nutrient: protein (g), iron (mg), biotin (mcg), zinc (mg), omega‑3 (g), vitamin D (IU), vitamin C (mg).
+
+3) Meal plan selection
+- For each meal candidate with nutrient profile A_n, target split assumes 3 main meals:
+
+  $\displaystyle T^{(meal)}_n = T_n/3.$
+
+- Scoring a meal:
+  - If $A_n \ge 0.8\,T^{(meal)}_n$ add 1 point; else if $A_n \ge 0.5\,T^{(meal)}_n$ add 0.5 point.
+  - Sum over nutrients; pick argmax per meal slot (breakfast/lunch/dinner) after filtering by dietary restrictions.
+
+4) Snack suggestions
+- Heuristic short‑list emphasizing omega‑3, protein, iron/zinc, vitamin C.
+
+5) Supplement heuristics
+- If severity s > 0.6: add Biotin Complex (≈5,000 mcg/d), Iron + Vitamin C (≈25 mg + 100 mg), Omega‑3 fish oil (≈1,000 mg EPA+DHA/d), timing as specified.
+- If male or s > 0.7: add Zinc (≈15 mg/d).
+- Note: Doses are illustrative defaults; real use should be clinician‑guided.
+
+6) Confidence score
+- Base confidence 0.7; data sufficiency $c_d = \min(1, N/6)$ from last N predictions; assessment completeness $c_a = K/10$ where K is count of non‑null fields.
+
+  $\displaystyle C = \min\big(0.7 + 0.2\,c_d + 0.1\,c_a,\ 0.95\big).$
+
+7) Output bundle
+- Returns: nutrient targets {T_n, unit, sources, importance}, 7‑day meal plan, supplement list, reasoning string, hair analysis {s, r, trend, confidence}, next review date = now + 30 days.
+
+Design notes and alignment with literature:
+- The mapping from hair loss stage to target nutrient intensity reflects clinical evidence that protein adequacy, iron status, zinc, certain B‑vitamins (biotin), omega‑3 fatty acids, and vitamin D/C impact hair health [R1–R3].
+- The recommendation engine is knowledge‑based and rule‑driven (not a collaborative filter). Similar approaches are common in nutrition recommender systems that encode expert rules and user constraints rather than learning preferences from large user histories [R4–R5].
+
+### 4.5.1 Flowchart (engine overview)
+
+```mermaid
+flowchart TD
+    A["User Assessment
+    (age, gender, weight, height,
+    activity, restrictions, conditions)"]
+    B["Prediction History
+    (stage, confidence, timestamp)"]
+    C["Hair Analysis
+    Compute severity s and trend r"]
+    D["Base Needs b_n
+    (gender-, weight-specific)"]
+    E["Multipliers
+    Hair m_n, severity h=1+s, urgency u"]
+    F["Daily Targets
+    T_n = b_n * m_n * h * u"]
+    G["Meal Library
+    (nutrient profiles, constraints)"]
+    H["Filter by Restrictions"]
+    I["Per-meal Scoring
+    against T_n/3"]
+    J["7-day Meal Plan"]
+    K["Supplement Heuristics"]
+    L["Confidence C"]
+    M["Final Bundle
+    {nutrients, meal plan, supplements,
+    reasoning, hair analysis, C}"]
+
+    A --> C
+    B --> C
+    C --> E
+    A --> D
+    D --> F
+    E --> F
+    F --> I
+    G --> H --> I --> J --> M
+    F --> K --> M
+    C --> L --> M
+
+```
+
+### 4.6 Formulas used (with definitions)
+
+Let the set of tracked nutrients be N = {protein, iron, biotin, zinc, omega3, vitamin_d, vitamin_c}.
+
+Variables and constants:
+- s ∈ [0,1]: current hair loss severity (from stage mapping, e.g., LEVEL_2→0.2, …, LEVEL_7→1.0)
+- r: progression rate per month derived from history (see below)
+- W (kg): user body weight
+- sex ∈ {male, female}
+- b_n: base daily need for nutrient n
+  - protein: 0.8 g/kg × W
+  - iron: 18 mg (female), 8 mg (male)
+  - omega3: 1.1 g (female), 1.6 g (male)
+  - vitamin_c: 75 mg (female), 90 mg (male)
+  - biotin: 30 mcg; zinc: 8 mg (female)/11 mg (male); vitamin_d: 600 IU
+- m_n ≥ 1: hair‑loss multiplier per nutrient (domain constants in code)
+- h = 1 + s: severity multiplier
+- u = 1.2 if r > 0 else 1.0: urgency multiplier for worsening trend
+
+Progression rate:
+
+$$ r = \frac{s(t_0) - s(t_n)}{\max(1,\ \text{days}(t_0,t_n))}\times 30. $$
+
+Trend rule:
+
+$$\text{trend} = \begin{cases}
+  ext{worsening} & r > 0.05,\\
+  ext{improving} & r < -0.05,\\
+  ext{stable} & \text{otherwise.}
+\end{cases}$$
+
+Daily nutrient target for each n ∈ N:
+
+$$ T_n = b_n\times m_n\times h\times u. $$
+
+Per‑meal target (3 main meals):
+
+$$ T^{(meal)}_n = T_n / 3. $$
+
+Meal scoring (for a candidate meal with nutrient amounts A_n):
+
+$$\text{score} = \sum_{n\in N} \Big( \mathbf{1}[A_n \ge 0.8\,T^{(meal)}_n] + 0.5\,\mathbf{1}[0.5\,T^{(meal)}_n \le A_n < 0.8\,T^{(meal)}_n] \Big). $$
+
+Supplements (heuristic):
+- if s > 0.6 → add biotin complex (~5000 mcg/d), iron+vitamin C (~25 mg + 100 mg), omega‑3 (~1000 mg EPA/DHA/d)
+- if sex=male or s > 0.7 → add zinc (~15 mg/d)
+
+Confidence score:
+
+Let Np be number of recent predictions used (bounded by 6), and K be count of non‑null assessment fields (out of 10):
+
+$$ c_d = \min(1, N_p/6),\quad c_a = K/10, \quad C = \min(0.7 + 0.2\,c_d + 0.1\,c_a,\ 0.95). $$
+
+Boundary conditions and safeguards:
+- Clamp s to [0,1]. If history < 2 samples, set r=0 and trend=insufficient_data.
+- Enforce non‑negative T_n; cap to safe upper bounds if integrating RDA/UL knowledge.
+- Respect dietary restrictions by filtering meals before scoring.
+
+
+### 4.7 Worked example: from inputs to diet plan
+
+Example user assessment and history:
+- Age 30, gender female, weight W=65 kg, height 165 cm, activity moderate
+- Dietary restrictions: ["vegetarian"]; health conditions: []; medications: []
+- Prediction history (last 90 days): tn: LEVEL_4 (s=0.6), t0: LEVEL_5 (s=0.8)
+
+Step 1 — Severity and trend
+- Current severity s = 0.8 (LEVEL_5)
+- Progression rate per month: r = (0.8 − 0.6)/90 × 30 = 0.0667 → r > 0.05 ⇒ trend = worsening
+
+Step 2 — Multipliers
+- Severity multiplier h = 1 + s = 1.8
+- Urgency multiplier u = 1.2 (since r > 0)
+- Combined multiplier h×u = 2.16
+
+Step 3 — Base needs b_n and hair multipliers m_n
+- Protein b = 0.8 g/kg × 65 = 52.0 g; m = 1.3
+- Iron b = 18 mg (female); m = 1.5
+- Biotin b = 30 mcg; m = 100
+- Zinc b = 8 mg (female); m = 1.5
+- Omega‑3 b = 1.1 g (female); m = 2.0
+- Vitamin D b = 600 IU; m = 2.0
+- Vitamin C b = 75 mg (female); m = 1.2
+
+Step 4 — Daily targets via Tn = bn × mn × h × u
+- Protein: 52.0 × 1.3 × 2.16 = 146.02 g/day
+- Iron: 18 × 1.5 × 2.16 = 58.32 mg/day
+- Biotin: 30 × 100 × 2.16 = 6,480 mcg/day
+- Zinc: 8 × 1.5 × 2.16 = 25.92 mg/day
+- Omega‑3: 1.1 × 2.0 × 2.16 = 4.752 g/day
+- Vitamin D: 600 × 2.0 × 2.16 = 2,592 IU/day
+- Vitamin C: 75 × 1.2 × 2.16 = 194.40 mg/day
+
+Per‑meal targets (divide by 3):
+- Protein 48.67 g; Iron 19.44 mg; Biotin 2,160 mcg; Zinc 8.64 mg; Omega‑3 1.584 g; Vitamin D 864 IU; Vitamin C 64.80 mg
+
+Step 5 — Filter meal library by restrictions
+- Remove non‑vegetarian meals (e.g., salmon dinner). Remaining examples:
+  - high_protein_breakfast: {protein 25, iron 3, biotin 25, omega‑3 0.3}
+  - iron_rich_lunch: {protein 18, iron 6, zinc 3, vitamin C 80}
+
+Step 6 — Score meals vs per‑meal targets
+- Breakfast candidates (id contains "breakfast"): high_protein_breakfast only
+  - Protein 25 vs 48.67 → ≥ 0.5×T (≥24.34) but < 0.8×T (38.94) ⇒ +0.5
+  - Iron 3 vs 19.44 ⇒ +0
+  - Biotin 25 vs 2,160 ⇒ +0
+  - Omega‑3 0.3 vs 1.584 ⇒ +0
+  - Total breakfast score = 0.5 → selected
+- Lunch candidates (id contains "lunch"): iron_rich_lunch only
+  - Protein 18 vs 48.67 ⇒ +0
+  - Iron 6 vs 19.44 ⇒ +0
+  - Zinc 3 vs 8.64 ⇒ +0
+  - Vitamin C 80 vs 64.80 ⇒ ≥ 0.8×T (51.84) ⇒ +1.0
+  - Total lunch score = 1.0 → selected
+- Dinner candidates (id contains "dinner"): none remaining after filter → fallback to first remaining meal by engine logic (high_protein_breakfast)
+
+Step 7 — Snack suggestions (top 3)
+- Handful of walnuts (omega‑3)
+- Greek yogurt with berries (protein, biotin)
+- Pumpkin seeds (zinc, iron)
+
+Step 8 — Supplements (heuristic)
+- s > 0.6 ⇒ add Biotin Complex (~5000 mcg/d), Iron + Vitamin C (~25 mg + 100 mg), Omega‑3 (~1000 mg EPA/DHA/d)
+- s > 0.7 ⇒ add Zinc (~15 mg/d)
+
+Step 9 — Confidence
+- Assume Np = 2 predictions available → cd = min(1, 2/6) = 0.33
+- Assume K = 9 of 10 assessment fields filled → ca = 0.9
+- C = min(0.7 + 0.2×0.33 + 0.1×0.9, 0.95) ≈ 0.86
+
+Resulting Day‑1 plan (engine preview):
+- Breakfast: High‑Protein Breakfast (score 0.5)
+- Lunch: Iron‑Rich Lunch (score 1.0)
+- Dinner: High‑Protein Breakfast (fallback due to restriction)
+- Snacks: walnuts; Greek yogurt with berries; pumpkin seeds
+- Daily targets: as computed above (Tn)
+- Supplements: biotin complex, iron+vitamin C, omega‑3, zinc
+- Confidence: ~0.86
+
+Notes:
+- This is a knowledge‑based demonstration; for clinical use, integrate RDAs/ULs, physician guidance, and a richer vegetarian meal library to hit protein/omega‑3 targets without fish (e.g., tofu/tempeh, legumes, chia/flax, algae‑based DHA).
+
+#### 4.7.1 Numeric summary table (Example A: female, vegetarian)
+
+| Nutrient   | b_n (base) | m_n | h | u | T_n (daily target) | T_n/3 (per meal) |
+|------------|------------|-----|---|---|---------------------|------------------|
+| Protein    | 52.00 g    | 1.3 |1.8|1.2| 146.02 g           | 48.67 g          |
+| Iron       | 18.00 mg   | 1.5 |1.8|1.2| 58.32 mg           | 19.44 mg         |
+| Biotin     | 30.00 mcg  | 100 |1.8|1.2| 6,480 mcg          | 2,160 mcg        |
+| Zinc       | 8.00 mg    | 1.5 |1.8|1.2| 25.92 mg           | 8.64 mg          |
+| Omega‑3    | 1.10 g     | 2.0 |1.8|1.2| 4.752 g            | 1.584 g          |
+| Vitamin D  | 600 IU     | 2.0 |1.8|1.2| 2,592 IU           | 864 IU           |
+| Vitamin C  | 75.00 mg   | 1.2 |1.8|1.2| 194.40 mg          | 64.80 mg         |
+
+Values computed via T_n = b_n × m_n × h × u with h = 1 + s and u based on trend.
+
+#### 4.7.2 Second example (Example B: male, stable trend)
+
+Inputs:
+- Age 35, gender male, weight W=75 kg, height 176 cm, activity moderate
+- Restrictions: none
+- History (60 days): tn: s=0.42, t0: s=0.40 ⇒ r = (0.40 − 0.42)/60 × 30 = −0.01 ⇒ |r| < 0.05 ⇒ trend = stable
+
+Multipliers:
+- s = 0.40 ⇒ h = 1 + s = 1.4; u = 1.0 (not worsening)
+
+Base needs (male) and hair multipliers:
+- Protein b = 0.8 g/kg × 75 = 60.0 g; m = 1.3 ⇒ T = 60.0 × 1.3 × 1.4 × 1.0 = 109.20 g
+- Iron b = 8 mg; m = 1.5 ⇒ 16.80 mg
+- Biotin b = 30 mcg; m = 100 ⇒ 4,200 mcg
+- Zinc b = 11 mg; m = 1.5 ⇒ 23.10 mg
+- Omega‑3 b = 1.6 g; m = 2.0 ⇒ 4.48 g
+- Vitamin D b = 600 IU; m = 2.0 ⇒ 1,680 IU
+- Vitamin C b = 90 mg; m = 1.2 ⇒ 151.20 mg
+
+Per‑meal targets (÷3): Protein 36.40 g; Iron 5.60 mg; Biotin 1,400 mcg; Zinc 7.70 mg; Omega‑3 1.49 g; Vitamin D 560 IU; Vitamin C 50.40 mg.
+
+Supplements (per heuristics):
+- Male ⇒ add Zinc Picolinate 15 mg/d even though severity ≤ 0.6.
+- No high‑severity bundle (biotin complex, iron+vitC, omega‑3) because s ≤ 0.6.
+
+Confidence example:
+- Assume Np = 4 ⇒ c_d = min(1, 4/6) ≈ 0.67; K = 10 ⇒ c_a = 1.0
+- C = min(0.7 + 0.2×0.67 + 0.1×1.0, 0.95) ≈ 0.93
+
+Remarks:
+- Compared to Example A (worsening, s=0.8), lower s and u=1.0 reduce targets substantially.
+- Non‑restricted meals (e.g., salmon dinner) would likely score higher against omega‑3/Vit D targets; vegetarian or vegan constraints should pivot to algae‑DHA, flax/chia, fortified foods.
+
 
 ## 5. Experimental Setup
 
@@ -205,6 +489,24 @@ You may need to adapt dataset paths inside the script to your local/exported dir
 3) Paszke, A. et al., PyTorch: An Imperative Style, High‑Performance Deep Learning Library, NeurIPS 2019.
 4) FastAPI, https://fastapi.tiangolo.com
 5) Roboflow Datasets, https://universe.roboflow.com
+
+R1) Almohanna MN, Ahmed AA, Tsatalis JP, Tosti A. “The Role of Vitamins and Minerals in Hair Loss: A Review.” Dermatology and Therapy (Heidelb). 2019.
+
+R2) Trost LB, Bergfeld WF, Calogeras E. “The diagnosis and treatment of iron deficiency and its potential relationship to hair loss.” Journal of the American Academy of Dermatology. 2006.
+
+R3) Rushton DH, Norris MJ, Dover R, Busuttil N. “Causes of hair loss and the developments in hair rejuvenation.” International Journal of Cosmetic Science. 2002. (See also Rushton DH. “Nutritional factors and hair loss.” Clinical and Experimental Dermatology. 2002.)
+
+R4) Trattner C, Elsweiler D. “Food Recommender Systems.” In: Social Information Access. Springer, 2018. (Survey of knowledge‑based and health‑aware food recommenders.)
+
+R5) Elsweiler D, Trattner C, Harvey M. “Exploiting food choice biases for healthier recipe recommendation.” ACM SIGIR. 2015. (Example of health‑oriented recommendation constraints.)
+
+R6) Burke R. “Knowledge‑based recommender systems.” Encyclopedia of Library and Information Systems. 2000. (Foundational overview of rule/constraint‑driven recommenders.)
+
+R7) Freyne J, Berkovsky S. “Intelligent Food Planning: Personalized Recipe Recommendation.” ACM UMAP. 2010. (Uses constraints/objectives akin to formula‑based matching.)
+
+R8) Ge M., Elahi M., Fernández-Tobías I., Ricci F., Massimo D. “Health-aware Food Recommender System.” Workshop on Food Recommender Systems, RecSys. 2015. (Health constraints and rule‑based components.)
+
+R9) Zeevi D. et al. “Personalized nutrition by prediction of glycemic responses.” Cell. 2015. (Algorithmic personalized nutrition; demonstrates data‑driven formulation of diet recommendations.)
 
 
 ## 13. Appendix

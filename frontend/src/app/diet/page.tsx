@@ -277,10 +277,10 @@ export default function DietDashboard() {
           <p className="text-gray-600">
             AI-powered nutrition recommendations based on your hair analysis
           </p>
-          <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full">
+          {/* <div className="mt-4 inline-flex items-center px-4 py-2 bg-green-100 text-green-800 rounded-full">
             <span className="mr-2">🎯</span>
             Confidence Score: {(recommendations.confidence_score * 100).toFixed(0)}%
-          </div>
+          </div> */}
         </div>
 
         {/* AI Reasoning */}
